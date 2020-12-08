@@ -15,7 +15,7 @@ function printConsole(message, type) {
 
 function getFilesizeInKB(filename) {
     var stats = fs.statSync(filename)
-    var fileSizeInBytes = stats["size"] 
+    var fileSizeInBytes = stats["size"]
     return Math.ceil(fileSizeInBytes / 1000)
 }
 
@@ -28,12 +28,27 @@ function readFile(path) {
     })
 }
 
+function writeFile(path, data) {
+    return new Promise((resolve, reject) => {
+        fs.writeFile(path, data, (err) => {
+            if (err) { return reject(err) }
+            resolve();
+        })
+    })
+}
 
 
-function getDirectories(source) { 
+
+function getProfileDirectories(source) {
     return fs.readdirSync(source, { withFileTypes: true })
         .filter(dirent => dirent.isDirectory() && /^Profile \d+$/.test(dirent.name))
-        .map(dirent => dirent.name).sort((a,b)=>  +/\d+/.exec(a) - +/\d+/.exec(b)) 
+        .map(dirent => dirent.name).sort((a, b) => +/\d+/.exec(a) - +/\d+/.exec(b))
+}
+
+function getDataFiles(source) {
+    return fs.readdirSync(source, { withFileTypes: true })
+        .filter(dirent => dirent.isFile() && /^\d+\.txt$/.test(dirent.name))
+        .map(dirent => dirent.name);
 }
 
 function parseJSON(json) {
@@ -44,4 +59,4 @@ function parseJSON(json) {
     }
 }
 
-module.exports = { printConsole, getFilesizeInKB, readFile, parseJSON, getDirectories }
+module.exports = { printConsole, getFilesizeInKB, readFile, parseJSON, getProfileDirectories, writeFile , getDataFiles}

@@ -1,5 +1,5 @@
 const fs = require("fs");
-const { printConsole, getFilesizeInKB, parseJSON, readFile, getDirectories } = require("./utils")
+const { printConsole, getFilesizeInKB, parseJSON, readFile, getProfileDirectories, writeFile } = require("./utils")
 
 
 const output = "DATA"
@@ -20,69 +20,64 @@ function getTokens(data) {
 }
 
 
-function start(rootFolder, startIndex) {
-    return new Promise((resolve, reject) => {
-        if (!fs.existsSync(rootFolder)) {
-            return reject(() => printConsole("Invalid root folder - value: " + rootFolder, "error"))
-        }
-        if (!(startIndex > 0)) {
-            return reject(() => printConsole("Invalid start index - value " + startIndex, "error"))
-        }
-        
-        const profileIndex = profileDirs.findIndex(dir => dir === "Profile " + startIndex);
+function start(rootFolder) {
 
-        if (!(profileIndex >= 0)) {
-            return reject(() => printConsole("Invalid profile index " + profileIndex, "error"))
-        }
+    if (!fs.existsSync(rootFolder)) {
+        return printConsole("Invalid root folder - value: " + rootFolder, "error")
+    }
 
-        const fileReaders = [];
-        const validProfiles = [];
-        let count = 0;
-        let i = profileIndex;
-        for (; count < 9 && i < profileDirs.length; i++) {
-            const filePath = `${rootFolder}/${profileDirs[i]}/ads_service/confirmations.json`;
-            if (fs.existsSync(filePath) && getFilesizeInKB(filePath) === 12) {
-                count++;
-                fileReaders.push(readFile(filePath))
-                validProfiles.push(profileDirs[i])
+    //Get all valid profile dir
+    const profileDirs = getProfileDirectories(rootFolder);
+
+    const fileReaders = [];
+    const validProfiles = [];
+
+
+    for (let i = 0; i < profileDirs.length; i++) {
+        const filePath = `${rootFolder}/${profileDirs[i]}/ads_service/confirmations.json`;
+        if (fs.existsSync(filePath) && getFilesizeInKB(filePath) === 12) {
+            fileReaders.push(readFile(filePath))
+            validProfiles.push(profileDirs[i])
+        }
+    }
+    Promise.all(fileReaders).then(async(results) => {
+
+            printConsole(results.length, "INFO")
+            const dataChunks = [];
+            const dataChunks2 = [];
+            var i, j, temparray, temparray2, chunk = 9;
+            for (i = 0; i < results.length; i += chunk) {
+                temparray = results.slice(i, i + chunk);
+                temparray2 = validProfiles.slice(i, i + chunk);
+                dataChunks.push(temparray);
+                dataChunks2.push(temparray2);
             }
-        }
-        printConsole(`Valid profile's confirmations.json (${validProfiles.length}): ` + validProfiles, "info")
-        Promise.all(fileReaders).then(results => {
-                const dataObjs = [];
-
-                results.forEach(result => {
-                    dataObjs.push(parseJSON(result));
-                })
-
-                const aggregateData = [];
-                dataObjs.forEach(data => {
-                    aggregateData.push(...getTokens(data));
-                })
-
+            for (var j = 0; j < dataChunks.length; j++) {
+                const chunk = dataChunks[j];
+                const chunk2 = dataChunks2[j];
                 const outputObj = {};
-                outputObj.destination = "Profile " + startIndex;
-                outputObj.data = aggregateData;
+                const aggregateData = [];
 
-                fs.writeFile(`${output}/${startIndex}.txt`, JSON.stringify(outputObj), (err) => {
-                    if (err) throw err;
-                    return resolve(() => {
-                        printConsole('File written to ' + `OUTPUT/${startIndex}${Date.now()}.txt`, "success");
-                        if (validDirs && validDirs.length > 0)
-                            return +/\d+/.exec(validDirs[validDirs.length - 1])[0];
-                    });
-                });
-            })
-            .catch(err => reject(() => printConsole(err, "error")))
-    });
+                outputObj.info = chunk2;
+
+                chunk.forEach(data => {
+                    aggregateData.push(...getTokens(parseJSON(data)))
+                })
+                outputObj.data = aggregateData;
+                const outPath = `${output}/${j}${Date.now()}.txt`
+                try {
+                    await writeFile(outPath, JSON.stringify(outputObj))
+                    printConsole('File written to ' + `${outPath}`, "success")
+                } catch (error) {
+                    printConsole('Failed to write file to ' + `${outPath}`, "error")
+                }
+            }
+            printConsole("Done....................", "success");
+        })
+        .catch(err => printConsole(err, "error"))
 }
 
 const rootFolder = process.argv[2];
-const startIndex = +process.argv[3];
 
-//Get all valid profile dir
-const profileDirs = getDirectories(rootFolder);
-
-let iterator = startIndex;
-while(iterator < profileDirs.length)
-start(rootFolder, startIndex)
+printConsole("Running................................................................", "info");
+start(rootFolder)

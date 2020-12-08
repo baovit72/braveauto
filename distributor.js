@@ -1,10 +1,10 @@
 const fs = require("fs");
-const { printConsole, getFilesizeInKB, parseJSON, readFile, getDirectories } = require("./utils");
+const { printConsole, getFilesizeInKB, getDataFiles, parseJSON, readFile, getProfileDirectories, writeFile } = require("./utils");
 
 const input = "DATA";
 if (!fs.existsSync(input)) {
     printConsole("No data provided", "error");
-    process.exit(1)
+    process.exit(1);
 }
 
 
@@ -13,37 +13,64 @@ const startIndex = +process.argv[3];
 
 
 
-function start(rootFolder, startIndex) {
-    return new Promise((resolve, reject) => {
-        if (!fs.existsSync(rootFolder)) {
-            reject(() => printConsole("Invalid root folder - value: " + rootFolder, "error"))
-        }
-        if (!(startIndex > 0)) {
-            reject(() => printConsole("Invalid start index - value " + startIndex, "error"))
-        }
-        const filePath = `${rootFolder}/${"Profile " + startIndex}/ads_service/confirmations.json`;
-        if (fs.existsSync(filePath)) {
-            readFile(filePath).then(data => {
-                const dataObj = parseJSON(data);
-                readFile(`${input}/${startIndex}.txt`).then(data => {
-                    const tokenDataObj = JSON.parse(data);
-                    const tokens = tokenDataObj.data;
-                    if (dataObj["unblinded_tokens"])
-                        dataObj["unblinded_tokens"].push(...tokens);
-                    fs.writeFile(filePath, JSON.stringify(dataObj), (err) => {
-                        if (err) throw err;
-                        resolve(() => { printConsole('File written to ' + filePath, "success") });
-                    });
-                }).catch(err => {
+async function start(rootFolder, startIndex) {
 
-                    reject(() => printConsole("Failed to read input tokens", "error"))
-                })
+    if (!fs.existsSync(rootFolder)) {
+        printConsole("Invalid root folder - value: " + rootFolder, "error");
+    }
+    if (!(startIndex > 0)) {
+        printConsole("Invalid start index - value " + startIndex, "error");
+    }
 
-            }).catch(err => {
-                reject(() =>
-                    printConsole("Failed to read input tokens", "error"))
-            })
+
+    //Get all valid profile dir
+    let profileDirs = getProfileDirectories(rootFolder);
+
+    const dataFiles = getDataFiles(input);
+
+    const profileIndex = profileDirs.findIndex(dir => +/\d+/.exec(dir) >= startIndex);
+
+    if (profileIndex < 0) {
+        return printConsole("Invalid start index - value " + startIndex, "error");
+    }
+
+    profileDirs = profileDirs.slice(profileIndex)
+
+    for (var i = 0, j = 0; i < dataFiles.length && j < profileDirs.length;) {
+        let data = null;
+        let desData = null;
+        try {
+            const filePath = `${input}/${dataFiles[i]}`;
+            const rawData = await readFile(filePath);
+            const dataObj = parseJSON(rawData);
+            data = dataObj.data || [];
+
+        } catch (error) {
+            console.log(error)
+            i++;
+            continue;
         }
-    })
+        try {
+            const filePath = `${rootFolder}/${profileDirs[j]}/ads_service/confirmations.json`;
+            const rawData = await readFile(filePath);
+            const dataObj = parseJSON(rawData);
+            desData = dataObj;
+        } catch (error) {
+            j++;
+            continue;
+        }
+        try {
+            const filePath = `${rootFolder}/${profileDirs[j]}/ads_service/confirmations.json`;
+            desData && desData.unblinded_tokens && desData.unblinded_tokens.push(...data);
+            await writeFile(filePath, JSON.stringify(desData));
+            printConsole('File written to ' + profileDirs[j], "success")
+        } catch (error) {
+            console.log(error)
+            printConsole('Failed to write to ' + profileDirs[j], "error")
+        }
+        i++;
+        j++;
+    }
+
 }
-start(rootFolder, startIndex).then(res => res()).catch(err => err())
+start(rootFolder, startIndex);
